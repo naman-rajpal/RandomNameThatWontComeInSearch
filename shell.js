@@ -6,6 +6,8 @@ const childProcess = require('child_process');
 // globals
 let cwd = path.dirname(__filename);
 let spawnedProcesses = [];
+let fgIndex = -1;
+
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -16,6 +18,9 @@ const rl = readline.createInterface({
 rl.prompt();
 
 function cdFunction(_path){
+    if( _path == null){
+        return;
+    }
     let newPath;
     if(path.isAbsolute(_path)) {
         newPath = _path;
@@ -56,18 +61,34 @@ function executeBinary(pathToBinary, args){
         console.log(`'${pathToBinary}' is not recognized as an internal or external command,operable program or batch file.\n`);
         return;
     } else {
-        const newProcess = childProcess.spawn(fileLocation, args, {
-            detached: true,
-        }).unref();
+        const newProcess = childProcess.spawn(fileLocation, args);
         spawnedProcesses.push(newProcess);
+        console.log(`Child process spawned with PID ${newProcess.pid}`)
         // use this to get output of spawned processes in same terminal window
         // newProcess.stdout.pipe(process.stdout);
     }
 }
 
-function fgFunction(args){
-    // not implemented, did not understand the question
-    console.log(spawnedProcesses.map(e=>e.pid));
+function fgFunction(pid){
+    //sending foreground process to background
+    if(fgIndex !==-1){
+        spawnedProcesses[fgIndex].stdout.unpipe(process.stdout);
+    }
+
+    //checking for required process
+
+    const index = spawnedProcesses.findIndex((proc) => {
+        return proc.pid == pid
+    })
+    fgIndex = index;
+    if(index !== -1){
+        //bringing process to foreground
+        spawnedProcesses[index].stdout.pipe(process.stdout);
+    }
+    else{
+        console.log(`No spawned process with PID : ${pid}`)
+        rl.prompt();
+    }
 }
 
 function onLineInput(value){
@@ -87,18 +108,35 @@ function onLineInput(value){
         case "ls": lsFunction(args[0]);
                     rl.prompt();
                     break;
-        case "fg": fgFunction(args);
-                    rl.prompt();
+        case "fg": fgFunction(args[0]);
+                    break;
+        case "exit": process.exit()
                     break;
         default: executeBinary(command, args);
-                 rl.prompt();
+                rl.prompt();
     }
 }
 
 rl.on("line", onLineInput);
 rl.on("SIGINT", ()=>{
-    process.exit();
+    if(fgIndex!==-1){
+        //killing the current process
+        spawnedProcesses[fgIndex].kill()
+    
+        //removing child process for spwaned processes
+        spawnedProcesses.splice(fgIndex, 1);
+    
+        //updating current process index
+        fgIndex = -1;
+    }
+    rl.prompt();
 })
 rl.on("SIGTSTP", ()=>{
-    // not working on windows, could not implement as foreground/background process question not clear
+    if(fgIndex!==-1){
+        //sending current process to background
+        spawnedProcesses[fgIndex].stdout.unpipe(process.stdout);
+        //printing process PID
+        console.log(spawnedProcesses[fgIndex].pid);
+        rl.prompt();
+    }
 });
